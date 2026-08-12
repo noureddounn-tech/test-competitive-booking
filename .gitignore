@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.DS_Store
+
+# Internal planning docs (design/plan) — never ship these to candidates,
+# they contain the expected solution. Kept locally, untracked, for the
+# maintainer's own reference.
+docs/superpowers/
