@@ -109,5 +109,44 @@ async def create_reservation(
 async def cancel_reservation(
     reservation_id: int, db: AsyncSession = Depends(get_db)
 ) -> None:
-    # Implemented in step 4: preserve history by changing status, not deleting.
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="not implemented")
+    # Read the slot ID without locking the reservation, then acquire locks in
+    # the same order as creation: slot row, then reservation row. This keeps
+    # capacity changes serialized with new bookings and avoids lock-order
+    # deadlocks.
+    async with db.begin():
+        reservation = await db.scalar(
+            select(Reservation).where(Reservation.id == reservation_id)
+        )
+        if reservation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Reservation not found",
+            )
+
+        slot = await db.scalar(
+            select(Slot).where(Slot.id == reservation.slot_id).with_for_update()
+        )
+        if slot is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Slot not found",
+            )
+
+        # Re-read and lock after acquiring the slot lock: another cancellation
+        # may have changed the status while this request was waiting.
+        reservation = await db.scalar(
+            select(Reservation)
+            .where(Reservation.id == reservation_id)
+            .with_for_update()
+        )
+        if reservation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Reservation not found",
+            )
+
+        # Cancellation is idempotent. Keep the row for audit/history and only
+        # release capacity by excluding it from confirmed-reservation counts.
+        if reservation.status == "confirmed":
+            reservation.status = "cancelled"
+            await db.flush()
