@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReservationCreate(BaseModel):
-    user_id: int
-    request_id: str
+    user_id: int = Field(gt=0)
+    request_id: str = Field(min_length=1, max_length=100)
 
 
 class ReservationRead(BaseModel):
