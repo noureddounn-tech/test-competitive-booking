@@ -15,3 +15,23 @@ class ReservationRead(BaseModel):
     slot_id: int
     user_id: int
     created_at: datetime
+
+
+class ReservationListItem(BaseModel):
+    id: int
+    slot_id: int
+    user_id: int
+    user_name: str
+    user_email: str
+    event_id: int
+    event_name: str
+    event_date: datetime
+    status: str
+    created_at: datetime
+
+
+class ReservationPage(BaseModel):
+    items: list[ReservationListItem]
+    total: int
+    limit: int
+    offset: int

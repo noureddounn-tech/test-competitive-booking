@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Reservation, Slot, User
-from app.schemas.reservation import ReservationCreate, ReservationRead
+from app.models import Event, Reservation, Slot, User
+from app.schemas.reservation import (
+    ReservationCreate,
+    ReservationListItem,
+    ReservationPage,
+    ReservationRead,
+)
 
 router = APIRouter(tags=["reservations"])
 
@@ -103,6 +108,67 @@ async def create_reservation(
             return _ensure_same_slot(existing, slot_id)
         # It was a different integrity failure; preserve the original error.
         raise
+
+
+@router.get(
+    "/slots/{slot_id}/reservations",
+    response_model=ReservationPage,
+)
+async def list_slot_reservations(
+    slot_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> ReservationPage:
+    # The grouped outer join distinguishes a missing slot from an existing
+    # slot with no reservations, without an extra existence query.
+    count_row = (
+        await db.execute(
+            select(Slot.id, func.count(Reservation.id))
+            .outerjoin(Reservation, Reservation.slot_id == Slot.id)
+            .where(Slot.id == slot_id)
+            .group_by(Slot.id)
+        )
+    ).one_or_none()
+    if count_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Slot not found",
+        )
+    total = count_row[1]
+
+    # Fetch all display fields in one joined query to avoid one query per
+    # reservation (the N+1 problem). Include cancelled rows for history.
+    rows = (
+        await db.execute(
+            select(
+                Reservation.id.label("id"),
+                Reservation.slot_id.label("slot_id"),
+                Reservation.user_id.label("user_id"),
+                User.name.label("user_name"),
+                User.email.label("user_email"),
+                Event.id.label("event_id"),
+                Event.name.label("event_name"),
+                Event.date.label("event_date"),
+                Reservation.status.label("status"),
+                Reservation.created_at.label("created_at"),
+            )
+            .join(User, User.id == Reservation.user_id)
+            .join(Slot, Slot.id == Reservation.slot_id)
+            .join(Event, Event.id == Slot.event_id)
+            .where(Reservation.slot_id == slot_id)
+            .order_by(Reservation.created_at.desc(), Reservation.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).mappings().all()
+
+    return ReservationPage(
+        items=[ReservationListItem.model_validate(row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.delete("/reservations/{reservation_id}", status_code=status.HTTP_204_NO_CONTENT)
