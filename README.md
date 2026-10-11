@@ -95,3 +95,4 @@ Les tests de concurrence nécessitent PostgreSQL réel et les migrations à jour
 5. Liste enrichie par jointures et pagination.
 6. Tests de concurrence, idempotence, annulation et comptage SQL.
 7. Documentation du fonctionnement, des garanties et des compromis.
+
